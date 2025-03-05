@@ -1,77 +1,70 @@
 import pandas as pd
-import glob
-import os
-from logger import logger
+import numpy as np
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.model_selection import train_test_split
 
-logger.info("Data preprocessing started.")
+# Define file path
+file_path = "processed_data/merged_dataset.csv"  # Update if needed
 
-# Define paths
-DATA_DIR = "data"
-PROCESSED_DIR = "processed_data"
-MERGED_FILE = os.path.join(PROCESSED_DIR, "merged_dataset.csv")
+# Load dataset with error handling
+try:
+    df = pd.read_csv(file_path)
+    print("✅ Dataset loaded successfully!\n")
+except FileNotFoundError:
+    print(f"❌ Error: File not found at {file_path}")
+    exit()
+except Exception as e:
+    print(f"❌ Error loading file: {e}")
+    exit()
 
-# Ensure processed_data directory exists
-os.makedirs(PROCESSED_DIR, exist_ok=True)
+# Display basic info
+print("Dataset Info:\n", df.info())
+print("\nFirst 5 Rows:\n", df.head())
 
-# Get all CSV files in the data directory
-file_paths = glob.glob(os.path.join(DATA_DIR, "*.csv"))
+# Handle missing values
+print("\nMissing Values Before Filling:\n", df.isnull().sum()[df.isnull().sum() > 0])
 
-# Ensure files exist
-if not file_paths:
-    logger.error("No CSV files found in the specified directory.")
-    raise FileNotFoundError("No CSV files found in the specified directory.")
+# Fill missing values with column median (numeric columns only)
+df.fillna(df.median(numeric_only=True), inplace=True)
 
-column_sets = {}
+# Drop duplicate rows
+df.drop_duplicates(inplace=True)
 
-# Step 1: Identify all unique columns across files
-for file in file_paths:
-    df = pd.read_csv(file, nrows=5)  # Read first 5 rows to check column names
-    if df.empty:
-        logger.warning(f"Skipping empty file: {file}")
-        continue
-    column_sets[file] = set(df.columns)
+# Convert categorical columns (except 'Label') to numerical
+categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+if 'Label' in categorical_cols:
+    categorical_cols.remove('Label')
 
-# Ensure we have at least one non-empty file
-if not column_sets:
-    logger.error("No valid CSV files with data.")
-    raise ValueError("All CSV files are empty.")
+if categorical_cols:
+    print(f"\nEncoding categorical columns: {categorical_cols}")
+    df = pd.get_dummies(df, columns=categorical_cols)
 
-# Get the union of all columns
-all_columns = set.union(*column_sets.values())
+# Encode 'Label' column if it exists
+if 'Label' in df.columns:
+    le = LabelEncoder()
+    df['Label'] = le.fit_transform(df['Label'])
+    print("\nLabel Encoding Mapping:\n", dict(zip(le.classes_, le.transform(le.classes_))))
 
-# Step 2: Normalize column structure across all files
-processed_files = []
+# Normalize numerical features
+scaler = MinMaxScaler()
+X = df.drop(columns=['Label'], errors='ignore')  # Drop label column if exists
+y = df['Label'].values if 'Label' in df.columns else None  # Convert to NumPy array
 
-for file in file_paths:
-    df = pd.read_csv(file)
-    
-    # Skip empty files
-    if df.empty:
-        logger.warning(f"Skipping empty file: {file}")
-        continue
+X_scaled = scaler.fit_transform(X)
 
-    # Add missing columns with NaN values
-    for col in all_columns:
-        if col not in df.columns:
-            df[col] = None  # Assign missing columns as NaN
-    
-    # Ensure column order matches `all_columns`
-    df = df[list(all_columns)]
-    
-    # Save the processed file
-    processed_file = os.path.join(PROCESSED_DIR, os.path.basename(file))
-    df.to_csv(processed_file, index=False)
-    processed_files.append(processed_file)
-    logger.info(f"Processed and saved: {processed_file}")
+# Split data into training and testing sets (if label exists)
+if y is not None:
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42, stratify=y)
+    print("\nDataset Shapes:")
+    print(f"X_train: {X_train.shape}, X_test: {X_test.shape}")
+    print(f"y_train: {y_train.shape}, y_test: {y_test.shape}")
 
-# Step 3: Merge all processed CSV files
-if processed_files:
-    combined_df = pd.concat([pd.read_csv(file) for file in processed_files], ignore_index=True)
-    
-    # Save the final merged dataset
-    combined_df.to_csv(MERGED_FILE, index=False)
-    logger.info(f"Merged dataset saved at: {MERGED_FILE}")
-    print(f"Data preprocessing completed. Merged dataset saved at: {MERGED_FILE}")
+    # Save processed data
+    pd.DataFrame(X_train).to_csv("processed_data/X_train.csv", index=False)
+    pd.DataFrame(X_test).to_csv("processed_data/X_test.csv", index=False)
+    pd.DataFrame(y_train, columns=["Label"]).to_csv("processed_data/y_train.csv", index=False)
+    pd.DataFrame(y_test, columns=["Label"]).to_csv("processed_data/y_test.csv", index=False)
+
+    print("\n✅ Data Preprocessing Completed Successfully!")
 else:
-    logger.error("No valid files to merge.")
-    print("No valid files to merge.")
+    print("\n⚠️ Warning: No 'Label' column found. Skipping train-test split.")
