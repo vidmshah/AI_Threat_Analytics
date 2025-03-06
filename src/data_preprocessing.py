@@ -1,70 +1,58 @@
+import os
 import pandas as pd
-import numpy as np
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 
-# Define file path
-file_path = "processed_data/merged_dataset.csv"  # Update if needed
+# 📌 Define file paths
+DATA_FOLDER = os.path.join(os.path.dirname(__file__), "../processed_data")
+OUTPUT_FOLDER = os.path.join(os.path.dirname(__file__), "../processed_data")
 
-# Load dataset with error handling
-try:
-    df = pd.read_csv(file_path)
-    print("✅ Dataset loaded successfully!\n")
-except FileNotFoundError:
-    print(f"❌ Error: File not found at {file_path}")
-    exit()
-except Exception as e:
-    print(f"❌ Error loading file: {e}")
-    exit()
+input_file = os.path.join(DATA_FOLDER, "merged_dataset.csv")  # Use merged dataset
+output_file = os.path.join(OUTPUT_FOLDER, "cleaned_dataset.csv")  # Save location
 
-# Display basic info
-print("Dataset Info:\n", df.info())
-print("\nFirst 5 Rows:\n", df.head())
+def load_and_preprocess_data():
+    """Loads and preprocesses the merged dataset."""
+    
+    # 🔹 Load the dataset
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"❌ File not found: {input_file}")
+    
+    print(f"📌 Loading dataset: {input_file}")
+    df = pd.read_csv(input_file, dtype=str, low_memory=False)
 
-# Handle missing values
-print("\nMissing Values Before Filling:\n", df.isnull().sum()[df.isnull().sum() > 0])
+    # 🔹 Handle missing values using forward fill
+    df.ffill(inplace=True)
 
-# Fill missing values with column median (numeric columns only)
-df.fillna(df.median(numeric_only=True), inplace=True)
+    # 🔹 Convert numeric columns back to proper types
+    for col in df.columns:
+        try:
+            df[col] = pd.to_numeric(df[col])  # Convert to numeric type if possible
+        except ValueError:
+            pass  # Keep as string if conversion fails
 
-# Drop duplicate rows
-df.drop_duplicates(inplace=True)
+    # 🔹 Normalize numerical columns
+    num_cols = df.select_dtypes(include=['int64', 'float64']).columns
+    if len(num_cols) > 0:
+        scaler = StandardScaler()
+        df[num_cols] = scaler.fit_transform(df[num_cols])
 
-# Convert categorical columns (except 'Label') to numerical
-categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-if 'Label' in categorical_cols:
-    categorical_cols.remove('Label')
+    # 🔹 Encode categorical columns
+    cat_cols = df.select_dtypes(include=['object']).columns
+    encoder = LabelEncoder()
+    for col in cat_cols:
+        df[col] = df[col].astype(str)  # Convert everything to string before encoding
+        df[col] = encoder.fit_transform(df[col])
 
-if categorical_cols:
-    print(f"\nEncoding categorical columns: {categorical_cols}")
-    df = pd.get_dummies(df, columns=categorical_cols)
+    return df
 
-# Encode 'Label' column if it exists
-if 'Label' in df.columns:
-    le = LabelEncoder()
-    df['Label'] = le.fit_transform(df['Label'])
-    print("\nLabel Encoding Mapping:\n", dict(zip(le.classes_, le.transform(le.classes_))))
+if __name__ == "__main__":
+    # 🔹 Process the dataset
+    processed_data = load_and_preprocess_data()
+    print("✅ Data preprocessing complete!")
 
-# Normalize numerical features
-scaler = MinMaxScaler()
-X = df.drop(columns=['Label'], errors='ignore')  # Drop label column if exists
-y = df['Label'].values if 'Label' in df.columns else None  # Convert to NumPy array
+    # 🔹 Ensure output directory exists
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-X_scaled = scaler.fit_transform(X)
+    # 🔹 Save processed data
+    processed_data.to_csv(output_file, index=False)
 
-# Split data into training and testing sets (if label exists)
-if y is not None:
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42, stratify=y)
-    print("\nDataset Shapes:")
-    print(f"X_train: {X_train.shape}, X_test: {X_test.shape}")
-    print(f"y_train: {y_train.shape}, y_test: {y_test.shape}")
-
-    # Save processed data
-    pd.DataFrame(X_train).to_csv("processed_data/X_train.csv", index=False)
-    pd.DataFrame(X_test).to_csv("processed_data/X_test.csv", index=False)
-    pd.DataFrame(y_train, columns=["Label"]).to_csv("processed_data/y_train.csv", index=False)
-    pd.DataFrame(y_test, columns=["Label"]).to_csv("processed_data/y_test.csv", index=False)
-
-    print("\n✅ Data Preprocessing Completed Successfully!")
-else:
-    print("\n⚠️ Warning: No 'Label' column found. Skipping train-test split.")
+    print(f"✅ Processed data saved to: {output_file}")
