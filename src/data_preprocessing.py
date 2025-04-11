@@ -56,3 +56,21 @@ if __name__ == "__main__":
     processed_data.to_csv(output_file, index=False)
 
     print(f"✅ Processed data saved to: {output_file}")
+
+
+
+# import pandas as pd
+
+# # Load the cleaned dataset
+# df = pd.read_csv("/Users/vidit/Downloads/AI_Threat_Analytics/processed_data/cleaned_dataset.csv")
+
+# # Display basic info
+# print(df.info())
+# print(df.head())
+
+# # Check for missing values
+# print(df.isnull().sum())
+
+# # Check class distribution
+# if 'threat_type' in df.columns:
+#     print(df['threat_type'].value_counts())
